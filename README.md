@@ -1,14 +1,22 @@
+## Tools for the Wikipedia datasets
 
-# Tools for the Wikipedia datasets
+This repository provides tools for the analysis of Wikipedia data. 
 
-## Extraction of time series of visits per page per hour
+### Wikipedia data parsers
 
-Data are available at [https://dumps.wikimedia.org/other/pagecounts-ez/](https://dumps.wikimedia.org/other/pagecounts-ez/)
+In the folder `parsers/` you will find parsers for the different data files provided by Wikipedia.
 
-The module is named `wiki_ts`.
 
-## Extraction of data from the dumps
+### Building a Wikipedia Graph from the page hyperlinks
 
 To do
 
+### Monitoring Wikipedia visits activity
 
+To do
+
+### License
+
+The code is open-source under the [Apache v2 license](https://www.apache.org/licenses/LICENSE-2.0.html).
+
+Copyright 2018 Laboratoire de traitement du signal 2, EPFL
