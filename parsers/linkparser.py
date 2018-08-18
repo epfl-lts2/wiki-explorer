@@ -70,8 +70,59 @@ def file2df(file,regexparser,reduce2ns,ns):
 	return pageid_list
 
 
+def extract_data_sliced(file,outfile,regexparser,reduce2ns,ns,slice_size=1000):
+	print('Extracting data from ',file)
+	folder,filename = os.path.split(input_file)
+	start_total = time.time()
+	wrapper = codecs.getreader('utf-8')
+	with gzip.open(file, 'rb') as f:
+		wf = wrapper(f,errors='replace')
+		#wf = f
+		count = 0
+		nb_outfile = 0
+		total_nb_entries = 0
+		pageid_list = []
+		start_load = time.time()
+		for line in tqdm(wf):
+			count += 1
+			info_list = regexparser.findall(line)
+			#print('Length',len(info_list))
+			valid_pages = reduce2ns(info_list,ns)
+			if valid_pages:
+				pageid_list += valid_pages
+			if (count % slice_size) == 0:
+				#print(count)
+				load_duration = time.time() - start_load
+				print('\n Loading time: {} min {} s.'.format(int(load_duration/60),
+					int(load_duration%60)))
+				outfile = os.path.join(folder,outname + str(nb_outfile) + '.gz')
+				nb_entries = save_list_as_df(pageid_list,outfile)
+				nb_outfile +=1
+				total_nb_entries += nb_entries
+				pageid_list = []
+				start_load = time.time()
+		# Save the last batch of data
+		outfile = os.path.join(folder,outname + str(nb_outfile) + '.gz')
+		nb_entries = save_list_as_df(pageid_list,outfile)
+		total_nb_entries += nb_entries
+	duration = time.time() - start_total
+	print('Total time: {} min {} s.'.format(int(duration/60),int(duration%60)))
+	print('Total lines processed', count)
+	print('Total number of entries',total_nb_entries)
+	return 0
 
-
+def save_list_as_df(item_list,outfile):
+	df=pandas.DataFrame(item_list,columns=['sourceId','TargetTitle'])
+	df.sourceId = df.sourceId.astype(int)
+	nb_entries = len(df)
+	print('Nb of entries:',nb_entries)
+	#outfile = os.path.join(folder,outname + str(count) + '.gz')
+	print('Saving dataframe to ',outfile)
+	start_gz = time.time()
+	df.to_pickle(outfile)
+	duration = time.time() - start_gz
+	print('time to compress and save: {} min {} s.'.format(int(duration/60),int(duration%60)))
+	return nb_entries
 
 if __name__ == "__main__":
 
@@ -100,14 +151,18 @@ if __name__ == "__main__":
 		print('Wrong type of file.')
 		raise ValueError('Can not process this type of file.')
 
-	p_list = file2df(input_file,regex_string,data_filter,'0')
 
-	df=pandas.DataFrame(p_list,columns=['sourceId','TargetTitle'])
-	df.sourceId = df.sourceId.astype(int)
-	print('Nb of entries:',len(df))
-	outfile = os.path.join(folder,outname + '.gz')
-	print('Saving dataframe to ',outfile)
-	start = time.time()
-	df.to_pickle(outfile)
-	duration = time.time() - start
-	print('time to compress and save: {} min {} s.'.format(int(duration/60),int(duration%60)))
+	extract_data_sliced(input_file,outname,regex_string,data_filter,'0')
+
+
+	# p_list = file2df(input_file,regex_string,data_filter,'0')
+
+	# df=pandas.DataFrame(p_list,columns=['sourceId','TargetTitle'])
+	# df.sourceId = df.sourceId.astype(int)
+	# print('Nb of entries:',len(df))
+	# outfile = os.path.join(folder,outname + '.gz')
+	# print('Saving dataframe to ',outfile)
+	# start = time.time()
+	# df.to_pickle(outfile)
+	# duration = time.time() - start
+	# print('time to compress and save: {} min {} s.'.format(int(duration/60),int(duration%60)))
