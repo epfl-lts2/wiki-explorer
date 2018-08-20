@@ -1,12 +1,13 @@
 
 import os
-import pandas
 import codecs
 import re
 from tqdm import tqdm
-import pandas as pd
+import pandas
 import time
 import gzip
+import argparse
+import glob
 
 pagelinksR = re.compile("\((\d+),"      # pl_from             (source page id)
 						 + "(\d+),"        # page_namespace      (namespace number)
@@ -70,31 +71,31 @@ def file2df(file,regexparser,reduce2ns,ns):
 	return pageid_list
 
 
-def extract_data_sliced(file,outfile,regexparser,reduce2ns,ns,slice_size=1000):
+def extract_data_sliced(file,outname,regexparser,reduce2ns,ns,slice_size=1000):
 	print('Extracting data from ',file)
 	folder,filename = os.path.split(input_file)
 	start_total = time.time()
 	wrapper = codecs.getreader('utf-8')
 	with gzip.open(file, 'rb') as f:
 		wf = wrapper(f,errors='replace')
-		#wf = f
 		count = 0
 		nb_outfile = 0
 		total_nb_entries = 0
 		pageid_list = []
 		start_load = time.time()
+		# Iterate over the lines of the file
 		for line in tqdm(wf):
 			count += 1
 			info_list = regexparser.findall(line)
-			#print('Length',len(info_list))
 			valid_pages = reduce2ns(info_list,ns)
 			if valid_pages:
 				pageid_list += valid_pages
-			if (count % slice_size) == 0:
-				#print(count)
+			if slice_size != 0 and (count % slice_size) == 0:
 				load_duration = time.time() - start_load
 				print('\n Loading time: {} min {} s.'.format(int(load_duration/60),
 					int(load_duration%60)))
+				if not pageid_list :
+					continue
 				outfile = os.path.join(folder,outname + str(nb_outfile) + '.gz')
 				nb_entries = save_list_as_df(pageid_list,outfile)
 				nb_outfile +=1
@@ -102,9 +103,11 @@ def extract_data_sliced(file,outfile,regexparser,reduce2ns,ns,slice_size=1000):
 				pageid_list = []
 				start_load = time.time()
 		# Save the last batch of data
-		outfile = os.path.join(folder,outname + str(nb_outfile) + '.gz')
-		nb_entries = save_list_as_df(pageid_list,outfile)
-		total_nb_entries += nb_entries
+		if pageid_list:
+			outfile = os.path.join(folder,outname + str(nb_outfile) + '.gz')
+			nb_entries = save_list_as_df(pageid_list,outfile)
+			total_nb_entries += nb_entries
+	# Concluding information
 	duration = time.time() - start_total
 	print('Total time: {} min {} s.'.format(int(duration/60),int(duration%60)))
 	print('Total lines processed', count)
@@ -124,45 +127,73 @@ def save_list_as_df(item_list,outfile):
 	print('time to compress and save: {} min {} s.'.format(int(duration/60),int(duration%60)))
 	return nb_entries
 
-if __name__ == "__main__":
 
-	input_file = '/home/benjamin/wikipedia/Wikipedia/enwiki-20180801-pagelinks.sql.gz'
-#	input_file = '/home/benjamin/wikipedia/Wikipedia/enwiki-20180801-redirect.sql.gz'
-#	input_file = '/home/benjamin/wikipedia/Wikipedia/enwiki-20180801-page.sql.gz'
+def process_file(input_file):
 	folder,filename = os.path.split(input_file)
-
-
 	if 'pagelinks' in filename:
 		print('Extracting links')
 		regex_string = pagelinksR
 		data_filter = reduce2ns_pagelinks
 		outname = 'pagelinks'
+		slice_size = 1000
 	elif 'page' in filename:
 		print('Extracting pages ids and titles')
 		regex_string = pageidR
 		data_filter = reduce2ns_page
+		slice_size = 0
 		outname = 'pageid'
 	elif 'redirect' in filename:
 		print('Extracting redirects')
 		regex_string = redirectR
 		data_filter = reduce2ns_redirect
 		outname = 'redirect'
+		slice_size = 0
 	else:
 		print('Wrong type of file.')
 		raise ValueError('Can not process this type of file.')
 
 
-	extract_data_sliced(input_file,outname,regex_string,data_filter,'0')
+	output = extract_data_sliced(input_file,outname,regex_string,data_filter,'0',slice_size)
+	return output
 
+def is_dir(dirname):
+	"""Checks if a path is an actual directory"""
+	if not os.path.isdir(dirname):
+		msg = "{0} is not a directory".format(dirname)
+		raise argparse.ArgumentTypeError(msg)
+	else:
+		return dirname
 
-	# p_list = file2df(input_file,regex_string,data_filter,'0')
+if __name__ == "__main__":
 
-	# df=pandas.DataFrame(p_list,columns=['sourceId','TargetTitle'])
-	# df.sourceId = df.sourceId.astype(int)
-	# print('Nb of entries:',len(df))
-	# outfile = os.path.join(folder,outname + '.gz')
-	# print('Saving dataframe to ',outfile)
-	# start = time.time()
-	# df.to_pickle(outfile)
-	# duration = time.time() - start
-	# print('time to compress and save: {} min {} s.'.format(int(duration/60),int(duration%60)))
+	parser = argparse.ArgumentParser(description='Parse the Wikipedia sql dumps.')
+	parser.add_argument('path', type=is_dir, nargs=1,
+					   help='Path where the dumps are stored')
+	parser.add_argument('type', type=str, nargs=1,
+					   help='File type: "redirect", "page", "pagelinks" or "all". ')
+
+	args = parser.parse_args()
+	print('Processing', args.path)
+	path = args.path[0]
+	file_type = args.type[0]
+	if file_type == "all":
+		file_type_list = ["redirect.sql.gz", "page.sql.gz", "pagelinks.sql.gz"]
+	else:
+		file_type_list = [file_type + ".sql.gz"]
+	file_list = glob.glob(os.path.join(path,'*'))
+	#print(file_list)
+	for f_type in file_type_list:
+		input_file_list = [file for file in file_list if f_type in file]
+
+	if not input_file_list:
+		print('No file found.')
+	else:
+		print('List to process:', input_file_list)		
+		for input_file in input_file_list:
+			process_file(input_file)
+
+#	input_file = '/home/benjamin/wikipedia/Wikipedia/enwiki-20180801-pagelinks.sql.gz'
+#	input_file = '/home/benjamin/wikipedia/Wikipedia/enwiki-20180801-redirect.sql.gz'
+#	input_file = '/home/benjamin/wikipedia/Wikipedia/enwiki-20180801-page.sql.gz'
+#	folder,filename = os.path.split(input_file)
+
