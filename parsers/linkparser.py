@@ -321,7 +321,7 @@ if __name__ == "__main__":
 				df_pagelinks = combine_info(df_redirect,df_pageid,df_pagelinks,out_combine)
 		else:
 			pagelinks_file = [file for file in input_file_list if 'pagelinks' in file]
-			process_file(pagelink_file[0],combine=[df_redirect,df_pageid,pagelinks_corrected_file])
+			process_file(pagelinks_file[0],combine=[df_redirect,df_pageid,pagelinks_corrected_file])
 			
 
 
