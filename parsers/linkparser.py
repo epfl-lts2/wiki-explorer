@@ -118,20 +118,28 @@ def file2df(file,regexparser,reduce2ns,ns):
 # 	print('Total number of entries',total_nb_entries)
 # 	return df
 
-def extract_data_sliced(file,outname,regexparser,reduce2ns,ns,slice_size=1000):
+def extract_data_sliced(file,outname,regexparser,reduce2ns,ns,slice_size,combine=None):
 	print('Extracting data from ',file)
-	folder,filename = os.path.split(input_file)
+	folder,filename = os.path.split(file)
 	start_total = time.time()
 	nb_outfile = 0
 	total_nb_entries = 0
+	start_load = time.time()
 	for data_slice,line_count in data_slice_generator(file,regexparser,reduce2ns,ns,slice_size):
 		outfile = os.path.join(folder,outname + str(nb_outfile) + '.gz')
 		nb_entries = len(data_slice)
 		if nb_entries > 0 :
+			load_duration = time.time() - start_load
+			print('Loading time: {} min {} s.'.format(int(load_duration/60),
+					int(load_duration%60)))
 			print('Nb of entries:',nb_entries)
 			save_to_disk(data_slice,outfile)
-			nb_outfile +=1
-		total_nb_entries += nb_entries
+			total_nb_entries += nb_entries
+			if combine != None:
+				out_combine = os.path.join(folder,combine[2] + nb_outfile + 'npz')
+				data_slice = combine_info(combine[0],combine[1],data_slice,out_combine)
+			nb_outfile += 1
+			start_load = time.time()
 	# Concluding information
 	duration = time.time() - start_total
 	print('Total time: {} min {} s.'.format(int(duration/60),int(duration%60)))
@@ -146,7 +154,6 @@ def data_slice_generator(file,regexparser,reduce2ns,ns,slice_size):
 		wf = wrapper(f,errors='replace')
 		count = 0
 		pageid_list = []
-		start_load = time.time()
 		# Iterate over the lines of the file
 		for line in tqdm(wf):
 			df = pandas.DataFrame() # Free some memory during the iterating process
@@ -158,15 +165,13 @@ def data_slice_generator(file,regexparser,reduce2ns,ns,slice_size):
 			# For big files, cut in chunks and save to disk to preserve the memory
 			# For big file, slice_size > 0 
 			if slice_size != 0 and (count % slice_size) == 0:
-				load_duration = time.time() - start_load
-				print('\n Loading time: {} min {} s.'.format(int(load_duration/60),
-					int(load_duration%60)))
 				if not pageid_list :
 					continue
+				print('Building dataFrame...')
 				df=pandas.DataFrame(pageid_list,columns=['pageId','pageTitle'])
 				df.pageId = df.pageId.astype(int)
+				print('dataFrame built.')
 				pageid_list = []
-				start_load = time.time()
 				yield df, count
 	df=pandas.DataFrame(pageid_list,columns=['pageId','pageTitle'])
 	df.pageId = df.pageId.astype(int)
@@ -180,17 +185,18 @@ def save_to_disk(item_df,outfile):
 	item_df.to_pickle(outfile)
 	duration = time.time() - start_gz
 	print('time to compress and save: {} min {} s.'.format(int(duration/60),int(duration%60)))
+	print('')
 	return 0
 
 
-def process_file(input_file):
+def process_file(input_file,combine=None):
 	folder,filename = os.path.split(input_file)
 	if 'pagelinks' in filename:
 		print('Extracting links')
 		regex_string = pagelinksR
 		data_filter = reduce2ns_pagelinks
 		outname = 'pagelinks_parsed'
-		slice_size = 1000
+		slice_size = 500
 	elif 'page' in filename:
 		print('Extracting pages ids and titles')
 		regex_string = pageidR
@@ -208,8 +214,38 @@ def process_file(input_file):
 		raise ValueError('Can not process this type of file.')
 
 
-	output_df = extract_data_sliced(input_file,outname,regex_string,data_filter,'0',slice_size)
+	output_df = extract_data_sliced(input_file,outname,regex_string,data_filter,'0',slice_size,combine)
 	return output_df
+
+def combine_info(redirect_df,pageid_df,pagelinks_df,outfilename):
+	# Translate id to title
+	pagelinks_df.rename(columns={'pageTitle' : 'target'}, inplace=True)
+	pagelinks_df = pagelinks_df.join(pageid_df, on='pageId', how='inner')
+	pagelinks_df.rename(columns={'pageTitle' : 'source'}, inplace=True)
+	# Replace targets using redirects
+	#pagelinks_df.rename(columns={'pageId' : 'sourceId'}, inplace=True)
+	pagelinks_df = pagelinks_df.drop('pageId', axis=1)
+	pagelinks_df['fix_target'] = pagelinks_df['target'].copy()
+	pagelinks_df = pagelinks_df.set_index('target')
+	pagelinks_df.update(redirect_df)
+	pagelinks_df.reset_index(inplace = True)
+	# Label the redirected
+	pagelinks_df['is_redirect'] = (pagelinks_df['target'] != pagelinks_df['fix_target'])*1
+	pagelinks_df = pagelinks_df.reindex(columns=['source','target','fix_target','is_redirect'])
+	save_to_disk(pagelinks_df,outfilename)
+	return pagelinks_df
+
+def df_reshape(redirect_df,pageid_df):
+	print('Re-arranging redirect and pageId dataframes...')
+	# Prepare the page list
+	pageid_df.set_index('pageId', inplace=True)
+	# Prepare the redirect list
+	redirect_df.rename(columns={'pageId' : 'initial_id', 'pageTitle' : 'fix_target'}, inplace=True)
+	redirect_df = redirect_df.join(pageid_df, on='initial_id', how='inner')
+	redirect_df.rename(columns={'pageTitle' : 'initial_target'}, inplace=True)
+	redirect_df = redirect_df.drop('initial_id', axis=1)
+	redirect_df = redirect_df.set_index('initial_target')
+	return redirect_df,pageid_df
 
 def is_dir(dirname):
 	"""Checks if a path is an actual directory"""
@@ -239,9 +275,9 @@ if __name__ == "__main__":
 		file_type_list = [file_type + ".sql.gz"]
 	file_list = glob.glob(os.path.join(path,'*'))
 	#print(file_list)
+	input_file_list = []
 	for f_type in file_type_list:
-		input_file_list = [file for file in file_list if f_type in file]
-
+		input_file_list += [file for file in file_list if f_type in file]
 	if not input_file_list:
 		print('No file found.')
 		raise ValueError('No file to load in the given folder.')
@@ -251,28 +287,42 @@ if __name__ == "__main__":
 		for input_file in input_file_list:
 			process_file(input_file)
 	else:
+		pagelinks_corrected_file = 'pagelinks_corrected'
 		# Load redirect info
 		redirect_parsed = [file for file in file_list if 'redirect_parsed' in file]
 		if redirect_parsed:
+			if len(redirect_parsed) > 1:
+				raise ValueError('Can not handle more than one parsed redirect file.',redirect_parsed)
+			print('Found file already parsed. Loading {} ...'.format(redirect_parsed[0]))
 			df_redirect = pandas.read_pickle(redirect_parsed[0])
 		else:
 			redirect_file = [file for file in input_file_list if 'redirect' in file]
 			df_redirect = process_file(redirect_file[0])
 		# load pageid info
-		pageid_parsed = [file for file in file_list if 'page_parsed' in file]
+		pageid_parsed = [file for file in file_list if 'pageid_parsed' in file]
 		if pageid_parsed:
+			if len(pageid_parsed) > 1:
+				raise ValueError('Can not handle more than one parsed page file.',pageid_parsed)
+			print('Found file already parsed. Loading {} ...'.format(pageid_parsed[0]))
 			df_pageid = pandas.read_pickle(pageid_parsed[0])
 		else:
 			page_file = [file for file in input_file_list if 'page.' in file]
+			print(input_file_list)
 			df_pageid = process_file(page_file[0])
 		# Load pagelinks info
 		pagelinks_parsed =  [file for file in file_list if 'pagelinks_parsed' in file]
-		if not pagelinks_parsed:
-			pagelink_file = [file for file in input_file_list if 'pagelinks' in file]
-			df_pageid = process_file(pagelink_file[0])
-		pagelinks_file = [file for file in input_file_list if 'pagelinks' in file]
-		combine_files(df_redirect,df_pageid,pagelinks_file[0])
-
+		df_redirect,df_pageid = df_reshape(df_redirect,df_pageid)
+		if pagelinks_parsed:
+			print('Found files already parsed:'.format(pagelinks_parsed))
+			for file_nb,pagelinks_file in enumerate(sorted(pagelinks_parsed)):
+				print('Loading',pagelinks_file)
+				df_pagelinks = pandas.read_pickle(pagelinks_file)
+				out_combine = os.path.join(path, pagelinks_corrected_file + str(file_nb) + '.npz')
+				df_pagelinks = combine_info(df_redirect,df_pageid,df_pagelinks,out_combine)
+		else:
+			pagelinks_file = [file for file in input_file_list if 'pagelinks' in file]
+			process_file(pagelink_file[0],combine=[df_redirect,df_pageid,pagelinks_corrected_file])
+			
 
 
 #	input_file = '/home/benjamin/wikipedia/Wikipedia/enwiki-20180801-pagelinks.sql.gz'
