@@ -72,7 +72,7 @@ def extract_data_sliced(file,outname,regexparser,reduce2ns,ns,slice_size,combine
 			save_to_disk(data_slice,outfile)
 			total_nb_entries += nb_entries
 			if combine != None:
-				out_combine = os.path.join(folder,combine[2] + nb_outfile + 'npz')
+				out_combine = os.path.join(folder,combine[2] + str(nb_outfile) + '.npz')
 				data_slice = combine_info(combine[0],combine[1],data_slice,out_combine)
 			nb_outfile += 1
 			start_load = time.time()
