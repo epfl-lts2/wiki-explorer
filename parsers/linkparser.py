@@ -168,8 +168,10 @@ def combine_info(redirect_df,pageid_df,pagelinks_df,outfilename):
 	pagelinks_df.update(redirect_df)
 	pagelinks_df.reset_index(inplace = True)
 	# Label the redirected
-	pagelinks_df['is_redirect'] = (pagelinks_df['target'] != pagelinks_df['fix_target'])*1
+	pagelinks_df['is_redirect'] = (pagelinks_df['target'] != pagelinks_df['fix_target'])
 	pagelinks_df = pagelinks_df.reindex(columns=['source','target','fix_target','is_redirect'])
+	# Drop clomuns to reduce file size
+	pagelinks_df =  pagelinks_df.drop('target', axis=1)
 	save_to_disk(pagelinks_df,outfilename)
 	return pagelinks_df
 
