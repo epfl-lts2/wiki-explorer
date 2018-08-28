@@ -54,7 +54,7 @@ def reduce2ns_page(data_list,namespace):
 
 
 
-def extract_data_sliced(file,outname,regexparser,reduce2ns,ns,slice_size,combine=None):
+def extract_data_sliced(file,[outname,outtype],regexparser,reduce2ns,ns,slice_size,combine=None):
 	print('Extracting data from ',file)
 	folder,filename = os.path.split(file)
 	start_total = time.time()
@@ -62,7 +62,7 @@ def extract_data_sliced(file,outname,regexparser,reduce2ns,ns,slice_size,combine
 	total_nb_entries = 0
 	start_load = time.time()
 	for data_slice,line_count in data_slice_generator(file,regexparser,reduce2ns,ns,slice_size):
-		outfile = os.path.join(folder,outname + str(nb_outfile) + '.gz')
+		outfile = os.path.join(folder,outname + str(nb_outfile) + '.' + outtype)
 		nb_entries = len(data_slice)
 		if nb_entries > 0 :
 			load_duration = time.time() - start_load
@@ -119,14 +119,17 @@ def save_to_disk(item_df,outfile):
 	""" Save the dataframes to disk as pickle files."""
 	print('Saving dataframe to ',outfile)
 	start_gz = time.time()
-	item_df.to_pickle(outfile)
+	if outfile[-7:] == 'parquet':
+		item_df.to_parquet(outfile)
+	else:
+		item_df.to_pickle(outfile)
 	duration = time.time() - start_gz
 	print('Time to compress and save: {} min {} s.'.format(int(duration/60),int(duration%60)))
 	print('')
 	return 0
 
 
-def process_file(input_file,ext_parsed,combine=None):
+def process_file(input_file,ext_parsed,filetype,combine=None):
 	# Determine the file type to process
 	folder,filename = os.path.split(input_file)
 	if 'pagelinks' in filename:
@@ -152,7 +155,7 @@ def process_file(input_file,ext_parsed,combine=None):
 		raise ValueError('Can not process this type of file.')
 
 	# Process the file
-	output_df = extract_data_sliced(input_file,outname,regex_string,data_filter,'0',slice_size,combine)
+	output_df = extract_data_sliced(input_file,[outname,filetype],regex_string,data_filter,'0',slice_size,combine)
 	return output_df
 
 def combine_info(redirect_df,pageid_df,pagelinks_df,outfilename):
@@ -206,6 +209,9 @@ if __name__ == "__main__":
 							'"all" for all 3 files ' + 
 							'or "combine" to combine them to remove redirects. '))
 
+	parser.add_argument('outfile_type', type=str, nargs=1,
+						help=('output file type. Can be "gz" for compressed pickle ' +
+							'or "parquet".'))
 	args = parser.parse_args()
 	print('Processing', args.path)
 	# Path where the file can be found
@@ -214,6 +220,7 @@ if __name__ == "__main__":
 	file_type = args.type[0]
 	# Extention for the parsed file
 	ext_parsed = '_parsed'
+	savefile_type = args.outfile_type[0]
 
 	if file_type == "all" or file_type == "combine":
 		file_type_list = ["redirect.sql.gz", "page.sql.gz", "pagelinks.sql.gz"]
@@ -231,7 +238,7 @@ if __name__ == "__main__":
 	if file_type != "combine": # Just extract the files
 		print('List to process:', input_file_list)		
 		for input_file in input_file_list:
-			process_file(input_file,ext_parsed)
+			process_file(input_file,ext_parsed,savefile_type)
 	else:
 		# out filename to store the corrected links
 		pagelinks_corrected_file = 'pagelinks_corrected'
@@ -245,7 +252,7 @@ if __name__ == "__main__":
 			df_redirect = pandas.read_pickle(redirect_parsed[0])
 		else:
 			redirect_file = [file for file in input_file_list if 'redirect' in file]
-			df_redirect = process_file(redirect_file[0],ext_parsed)
+			df_redirect = process_file(redirect_file[0],ext_parsed,savefile_type)
 		# load pageid info
 		pageid_parsed = [file for file in file_list if 'page' + ext_parsed in file]
 		if pageid_parsed:
@@ -256,7 +263,7 @@ if __name__ == "__main__":
 		else:
 			page_file = [file for file in input_file_list if 'page.' in file]
 			print(input_file_list)
-			df_pageid = process_file(page_file[0],ext_parsed)
+			df_pageid = process_file(page_file[0],ext_parsed,savefile_type)
 		# Load pagelinks info
 		pagelinks_parsed =  [file for file in file_list if 'pagelinks' + ext_parsed in file]
 		df_redirect,df_pageid = df_reshape(df_redirect,df_pageid)
@@ -269,5 +276,5 @@ if __name__ == "__main__":
 				df_pagelinks = combine_info(df_redirect,df_pageid,df_pagelinks,out_combine)
 		else:
 			pagelinks_file = [file for file in input_file_list if 'pagelinks' in file]
-			process_file(pagelinks_file[0],ext_parsed,combine=[df_redirect,df_pageid,pagelinks_corrected_file])
+			process_file(pagelinks_file[0],ext_parsed,savefile_type,combine=[df_redirect,df_pageid,pagelinks_corrected_file])
 			
