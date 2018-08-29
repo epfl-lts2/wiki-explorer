@@ -54,7 +54,7 @@ def reduce2ns_page(data_list,namespace):
 
 
 
-def extract_data_sliced(file,[outname,outtype],regexparser,reduce2ns,ns,slice_size,combine=None):
+def extract_data_sliced(file,outname,outtype,regexparser,reduce2ns,ns,slice_size,combine=None):
 	print('Extracting data from ',file)
 	folder,filename = os.path.split(file)
 	start_total = time.time()
@@ -72,7 +72,7 @@ def extract_data_sliced(file,[outname,outtype],regexparser,reduce2ns,ns,slice_si
 			save_to_disk(data_slice,outfile)
 			total_nb_entries += nb_entries
 			if combine != None:
-				out_combine = os.path.join(folder,combine[2] + str(nb_outfile) + '.npz')
+				out_combine = os.path.join(folder,combine[2] + str(nb_outfile) + '.' + outtype)
 				data_slice = combine_info(combine[0],combine[1],data_slice,out_combine)
 			nb_outfile += 1
 			start_load = time.time()
@@ -129,7 +129,7 @@ def save_to_disk(item_df,outfile):
 	return 0
 
 def read_file(file):
-	if file[-3:] == 'npz':
+	if file[-1] == 'z':
 		return pandas.read_pickle(file)
 	else:
 		return pandas.read_parquet(file)
@@ -161,7 +161,7 @@ def process_file(input_file,ext_parsed,filetype,combine=None):
 		raise ValueError('Can not process this type of file.')
 
 	# Process the file
-	output_df = extract_data_sliced(input_file,[outname,filetype],regex_string,data_filter,'0',slice_size,combine)
+	output_df = extract_data_sliced(input_file,outname,filetype,regex_string,data_filter,'0',slice_size,combine)
 	return output_df
 
 def combine_info(redirect_df,pageid_df,pagelinks_df,outfilename):
@@ -197,6 +197,18 @@ def df_reshape(redirect_df,pageid_df):
 	redirect_df = redirect_df.set_index('initial_target')
 	return redirect_df,pageid_df
 
+def sort_by_extension_and_load(file_list):
+	pickle_file = [file for file in file_list if file[-1] == 'z']
+	parquet_file = [file for file in file_list if file[-7:] == 'parquet']
+	if not pickle_file and not parquet_file:
+		raise ValueError('Unknown file type in',file_list)
+	if parquet_file:
+		print('Found file already parsed. Loading {} ...'.format(parquet_file[0]))
+		return read_file(parquet_file[0])
+	else:
+		print('Found file already parsed. Loading {} ...'.format(pickle_file[0]))
+		return read_file(pickle_file[0])
+
 def is_dir(dirname):
 	"""Checks if a path is an actual directory"""
 	if not os.path.isdir(dirname):
@@ -216,7 +228,7 @@ if __name__ == "__main__":
 							'or "combine" to combine them to remove redirects. '))
 
 	parser.add_argument('outfile_type', type=str, nargs=1,
-						help=('output file type. Can be "gz" for compressed pickle ' +
+						help=('output file type. Can be "npz" or gz" for compressed pickle ' +
 							'or "parquet".'))
 	args = parser.parse_args()
 	print('Processing', args.path)
@@ -252,23 +264,16 @@ if __name__ == "__main__":
 		# Check if it was already parsed
 		redirect_parsed = [file for file in file_list if 'redirect' + ext_parsed in file]
 		if redirect_parsed:
-			if len(redirect_parsed) > 1:
-				raise ValueError('Can not handle more than one parsed redirect file.',redirect_parsed)
-			print('Found file already parsed. Loading {} ...'.format(redirect_parsed[0]))
-			df_redirect = read_file(redirect_parsed[0])
+			df_redirect = sort_by_extension_and_load(redirect_parsed)
 		else:
 			redirect_file = [file for file in input_file_list if 'redirect' in file]
 			df_redirect = process_file(redirect_file[0],ext_parsed,savefile_type)
 		# load pageid info
 		pageid_parsed = [file for file in file_list if 'page' + ext_parsed in file]
 		if pageid_parsed:
-			if len(pageid_parsed) > 1:
-				raise ValueError('Can not handle more than one parsed page file.',pageid_parsed)
-			print('Found file already parsed. Loading {} ...'.format(pageid_parsed[0]))
-			df_pageid = read_file(pageid_parsed[0])
+			df_pageid = sort_by_extension_and_load(pageid_parsed)
 		else:
 			page_file = [file for file in input_file_list if 'page.' in file]
-			print(input_file_list)
 			df_pageid = process_file(page_file[0],ext_parsed,savefile_type)
 		# Load pagelinks info
 		pagelinks_parsed =  [file for file in file_list if 'pagelinks' + ext_parsed in file]
@@ -278,7 +283,7 @@ if __name__ == "__main__":
 			for file_nb,pagelinks_file in enumerate(sorted(pagelinks_parsed)):
 				print('Loading',pagelinks_file)
 				df_pagelinks = read_file(pagelinks_file)
-				out_combine = os.path.join(path, pagelinks_corrected_file + str(file_nb) + '.npz')
+				out_combine = os.path.join(path, pagelinks_corrected_file + str(file_nb) + '.' + savefile_type)
 				df_pagelinks = combine_info(df_redirect,df_pageid,df_pagelinks,out_combine)
 		else:
 			pagelinks_file = [file for file in input_file_list if 'pagelinks' in file]
