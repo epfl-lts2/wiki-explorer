@@ -128,6 +128,12 @@ def save_to_disk(item_df,outfile):
 	print('')
 	return 0
 
+def read_file(file):
+	if file[-3:] == 'npz':
+		return pandas.read_pickle(file)
+	else:
+		return pandas.read_parquet(file)
+
 
 def process_file(input_file,ext_parsed,filetype,combine=None):
 	# Determine the file type to process
@@ -249,7 +255,7 @@ if __name__ == "__main__":
 			if len(redirect_parsed) > 1:
 				raise ValueError('Can not handle more than one parsed redirect file.',redirect_parsed)
 			print('Found file already parsed. Loading {} ...'.format(redirect_parsed[0]))
-			df_redirect = pandas.read_pickle(redirect_parsed[0])
+			df_redirect = read_file(redirect_parsed[0])
 		else:
 			redirect_file = [file for file in input_file_list if 'redirect' in file]
 			df_redirect = process_file(redirect_file[0],ext_parsed,savefile_type)
@@ -259,7 +265,7 @@ if __name__ == "__main__":
 			if len(pageid_parsed) > 1:
 				raise ValueError('Can not handle more than one parsed page file.',pageid_parsed)
 			print('Found file already parsed. Loading {} ...'.format(pageid_parsed[0]))
-			df_pageid = pandas.read_pickle(pageid_parsed[0])
+			df_pageid = read_file(pageid_parsed[0])
 		else:
 			page_file = [file for file in input_file_list if 'page.' in file]
 			print(input_file_list)
@@ -271,7 +277,7 @@ if __name__ == "__main__":
 			print('Found files already parsed:'.format(pagelinks_parsed))
 			for file_nb,pagelinks_file in enumerate(sorted(pagelinks_parsed)):
 				print('Loading',pagelinks_file)
-				df_pagelinks = pandas.read_pickle(pagelinks_file)
+				df_pagelinks = read_file(pagelinks_file)
 				out_combine = os.path.join(path, pagelinks_corrected_file + str(file_nb) + '.npz')
 				df_pagelinks = combine_info(df_redirect,df_pageid,df_pagelinks,out_combine)
 		else:
