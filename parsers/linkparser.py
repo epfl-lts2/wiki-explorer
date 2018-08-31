@@ -175,12 +175,26 @@ def combine_info(redirect_df,pageid_df,pagelinks_df,outfilename):
 	pagelinks_df['fix_target'] = pagelinks_df['target'].copy()
 	pagelinks_df = pagelinks_df.set_index('target')
 	pagelinks_df.update(redirect_df)
+	# Correct for the source (remove redirected nodes)
+	pagelinks_df.rename(columns={'fix_target' : 'fixed_target'}, inplace=True)
+	#redirect_df = redirect_df.set_index('initial_target')
+	pagelinks_df = pagelinks_df.join(redirect_df, on='source', how='left')
 	pagelinks_df.reset_index(inplace = True)
-	# Label the redirected
-	pagelinks_df['is_redirect'] = (pagelinks_df['target'] != pagelinks_df['fix_target'])
-	pagelinks_df = pagelinks_df.reindex(columns=['source','target','fix_target','is_redirect'])
-	# Drop clomuns to reduce file size
+	pagelinks_df.rename(columns={'fix_target' : 'is_redirect'}, inplace=True)
+	#pagelinks_df = pagelinks_df['is_redirect'].replace(to_replace=r'.+', value=True, regex=True)
+	pagelinks_df = pagelinks_df[pagelinks_df.is_redirect.isna()]
+	pagelinks_df =  pagelinks_df.drop('is_redirect', axis=1)
+	## Label the redirected
+	#pagelinks_df['is_redirected'] = (pagelinks_df['target'] != pagelinks_df['fix_target'])
+	#pagelinks_df = pagelinks_df.reindex(columns=['source','target','fix_target','is_redirected'])
+	pagelinks_df = pagelinks_df.reindex(columns=['source','target','fixed_target'])
+
+
+	# Drop columns to reduce file size
 	pagelinks_df =  pagelinks_df.drop('target', axis=1)
+	# duplicates and self edges must be removed as well
+	pagelinks_df.drop_duplicates(inplace=True)
+	pagelinks_df = pagelinks_df[pagelinks_df.source != pagelinks_df.fixed_target]
 	save_to_disk(pagelinks_df,outfilename)
 	return pagelinks_df
 
@@ -277,6 +291,9 @@ if __name__ == "__main__":
 			df_pageid = process_file(page_file[0],ext_parsed,savefile_type)
 		# Load pagelinks info
 		pagelinks_parsed =  [file for file in file_list if 'pagelinks' + ext_parsed in file]
+		# Avoid already corrected files
+		pagelinks_parsed =  [file for file in pagelinks_parsed if 'cor' not in file]
+
 		df_redirect,df_pageid = df_reshape(df_redirect,df_pageid)
 		if pagelinks_parsed:
 			print('Found files already parsed:'.format(pagelinks_parsed))
