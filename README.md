@@ -4,6 +4,8 @@ This repository provides tools for the analysis of Wikipedia data.
 
 more info on the data can be found here [https://meta.wikimedia.org/wiki/Data_dumps](https://meta.wikimedia.org/wiki/Data_dumps).
 
+These tools are focused on the sql dumps. See information about these files in the [Wikimedia manual](https://www.mediawiki.org/wiki/Manual:Database_layout) and in the [Dump format page](https://meta.wikimedia.org/wiki/Data_dumps/Dump_format).
+
 ## Wikipedia data parsers
 
 In the folder `parsers/` you will find parsers for the different data files provided by Wikipedia.
