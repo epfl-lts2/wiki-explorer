@@ -1,2 +1,11 @@
 __pycache__
 .ipynb_checkpoints/
+*.class
+*.log
+spark/WikiPageCountsParser/project/
+
+spark/WikiPageCountsParser/target/
+
+spark/WikiPageCountsParser/\.idea/
+
+spark/WikiPageCountsParser/src/main/resources/
